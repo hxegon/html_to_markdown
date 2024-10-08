@@ -3,7 +3,6 @@
 # Script for converting an appian html into markdown format
 
 # TODO:
-# - [ ] Output file arg with a substitution option
 # - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
 # - [ ] If base-path is included, add a markdown link under the heading?
 # - [x] Show help if no arguments are passed
@@ -26,8 +25,6 @@ Required:
 -F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html
 
 Optional:
--o/--outfile (NOT IMPLEMENTED) - file to write output too. substitutes {} with the basename of the file
-  - i.e. -o "foo/bar/{}_converted.md"
 -H/--no-heading - turns off adding the file name as a heading to the final markdown doc
 -p/--pretty-heading - Formats filenames a bit prettier into the markdown headings i.e. foo_bar-baz.html -> # foo bar baz
 -v/--verbose - Show extra info when processing
@@ -69,7 +66,6 @@ TEST_ARGS=false
 PRETTY_HEADINGS=false
 BASE_PATH=""
 VERBOSE=false
-OUTFILE=""
 
 # Ingest command line args
 while true; do
@@ -107,10 +103,6 @@ while true; do
     ;;
   --base-path)
     BASE_PATH=$2
-    shift 2
-    ;;
-  -o | --outfile)
-    OUTFILE=$2
     shift 2
     ;;
   --)
@@ -153,20 +145,6 @@ verbose() {
     echo "verbose message: $1"
   fi
 }
-
-if [[ $OUTFILE != "" ]]; then
-  verbose "constructing outfile path"
-  OUT_BASENAME=$(echo "$OUTFILE" | sed "s/{}/$(basename $FILE .html)")
-  OUTFILE="$(dirname $OUTFILE)/$OUT_BASENAME"
-fi
-
-# output() {
-#   if [[ $OUTFILE != "" ]]; then
-#     echo $1 >>$OUTFILE
-#   else
-#     echo $1
-#   fi
-# }
 
 CONTENT=$(cat $FILE)
 
