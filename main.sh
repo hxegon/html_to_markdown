@@ -3,8 +3,10 @@
 # Script for converting an appian html into markdown format
 
 # TODO:
+# - [ ] Download from url
 # - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
 # - [ ] If base-path is included, add a markdown link under the heading?
+#   - [ ] deprecate base-path arg, require url always and only download if file isn't supplied
 # - [x] Show help if no arguments are passed
 # - [x] Clean up code blocks
 # - [x] fix relative url paths
@@ -21,10 +23,12 @@ HELPMESSAGE=$(
   cat <<-END
 Converts appian page html into (somewhat) nicely formatted markdown
 Required:
--f/--file - is what file to convert
--F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html
+(Either url or file must be specified, not both)
+-u/--url - url to download and convert
+-f/--file - file to convert
 
 Optional:
+-F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html+simple_tables
 -H/--no-heading - turns off adding the file name as a heading to the final markdown doc
 -p/--pretty-heading - Formats filenames a bit prettier into the markdown headings i.e. foo_bar-baz.html -> # foo bar baz
 -v/--verbose - Show extra info when processing
@@ -36,35 +40,39 @@ Optional:
 Dependencies:
 htmlq - preprocess html for better markdown conversion
 pandoc - Actual html to markdown conversion
-sed - for cleaning up the headings
 getopt (gnu version) - arg parsing
 END
 )
 
+fail() {
+  echo "$1"
+  echo "$0 terminating..."
+  exit 1
+}
+
 # Exit if there are no arguments
 if [[ $@ == "" ]]; then
-  echo "$HELPMESSAGE"
-  exit 1
+  fail "$HELPMESSAGE"
 fi
 
 ## ARGUMENT HANDLING ##
 
-TEMP=$(getopt -o phHvf:F: --longoptions file:,format:,base-path:,heading,pretty-heading,test-args,verbose -n "$0" -- "$@")
+TEMP=$(getopt -o uphHvf:F: --longoptions url:,file:,format:,base-path:,heading,pretty-heading,test-args,verbose -n "$0" -- "$@")
 
 # Exit if getopt has an error
 if [ $? != 0 ]; then
-  echo "Terminating..." >&2
-  exit 1
+  fail "getopt failed to parse arguments"
 fi
 
 eval set -- "$TEMP"
 
 FILE=""
-FORMAT="markdown_strict-raw_html+simple_tables"
+URL=""
 ADD_HEADING=true
-TEST_ARGS=false
-PRETTY_HEADINGS=false
 BASE_PATH=""
+FORMAT="markdown_strict-raw_html+simple_tables"
+PRETTY_HEADINGS=false
+TEST_ARGS=false
 VERBOSE=false
 
 # Ingest command line args
@@ -79,6 +87,10 @@ while true; do
   -f | --file)
     FILE=$2
     shift 2 # Shift 2 to drop flag name & argument
+    ;;
+  -u | --url)
+    URL=$2
+    shift 2
     ;;
   -F | --format)
     FORMAT=$2
@@ -126,16 +138,16 @@ fi
 
 ## VALIDATIONS ##
 
-# Require file argument
-if [[ "$FILE" == "" ]]; then
-  echo -e "-f/--file is a required argument. see --help\nTerminating..."
-  exit 1
+# Require either url or file, not both
+if [[ "$FILE" == "" && "$URL" == "" ]]; then
+  fail "A file (-f/--file) or URL (-u/--url) must be supplied. see --help"
+elif [[ "$FILE" != "" && "$URL" != "" ]]; then
+  fail "A file AND a url have been supplied. It can only be one or the other."
 fi
 
 # Check that file exists
-if [[ ! -f "$FILE" ]]; then
-  echo -e "File to convert not found: $FILE\nTerminating..."
-  exit 1
+if [[ "$FILE" != "" && ! -f "$FILE" ]]; then
+  fail "File to convert not found: $FILE\nTerminating..."
 fi
 
 ## PROGRAM ##
