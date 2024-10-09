@@ -1,9 +1,13 @@
 #!/usr/bin/bash
 
-# Script for converting an appian html into markdown format
+# Script for converting web pages into markdown format
 
 # TODO:
 # - [ ] Download from url
+#   - [ ] Error handling for:
+#     - [ ] 404
+#     - [ ] 403
+#     - [ ] 500
 # - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
 # - [ ] If base-path is included, add a markdown link under the heading?
 #   - [ ] deprecate base-path arg, require url always and only download if file isn't supplied
@@ -21,7 +25,7 @@ set -o pipefail
 
 HELPMESSAGE=$(
   cat <<-END
-Converts appian page html into (somewhat) nicely formatted markdown
+  Converts web pages into (somewhat) nicely formatted markdown (WIP)
 Required:
 (Either url or file must be specified, not both)
 -u/--url - url to download and convert
@@ -41,6 +45,7 @@ Dependencies:
 htmlq - preprocess html for better markdown conversion
 pandoc - Actual html to markdown conversion
 getopt (gnu version) - arg parsing
+curl - Downloading page
 END
 )
 
@@ -136,7 +141,14 @@ if [[ $TEST_ARGS == true ]]; then
   exit 0
 fi
 
+verbose() {
+  if [[ $VERBOSE == true ]]; then
+    echo "verbose message: $1"
+  fi
+}
+
 ## VALIDATIONS ##
+verbose "Starting argument validations"
 
 # Require either url or file, not both
 if [[ "$FILE" == "" && "$URL" == "" ]]; then
@@ -145,21 +157,33 @@ elif [[ "$FILE" != "" && "$URL" != "" ]]; then
   fail "A file AND a url have been supplied. It can only be one or the other."
 fi
 
-# Check that file exists
-if [[ "$FILE" != "" && ! -f "$FILE" ]]; then
-  fail "File to convert not found: $FILE\nTerminating..."
+# --base-path shouldn't be specified separately if --url is
+if [[ "$URL" != "" && $BASE_PATH != "" ]]; then
+  fail "both --url and --base-path have been specified, don't do that. The base url should be based off the full url of the page."
 fi
 
 ## PROGRAM ##
 
-verbose() {
-  if [[ $VERBOSE == true ]]; then
-    echo "verbose message: $1"
+# Get html
+if [[ "$URL" != "" ]]; then
+  CONTENT=$(curl -L $URL)
+
+  if [ $? != 0 ]; then
+    fail "Failed to download page"
+  elif [[ "$CONTENT" == "" ]]; then
+    fail "No content to convert in the downloaded page."
   fi
-}
 
-CONTENT=$(cat $FILE)
+  BASE_PATH=$(echo "$URL" | sed -E 's|(.+)/[^/]*$|\1|')
+else
+  if [[ "$FILE" != "" && ! -f "$FILE" ]]; then
+    fail "File to convert not found: $FILE\nTerminating..."
+  fi
 
+  CONTENT=$(cat $FILE)
+fi
+
+# Fix href/src references to relative urls
 if [[ $BASE_PATH != "" ]]; then
   verbose "starting base path corrections"
 
@@ -170,6 +194,7 @@ if [[ $BASE_PATH != "" ]]; then
   verbose "Correcting paths..."
   CONTENT=$(
     echo "$CONTENT" |
+      # TODO: Combine the href/src expressions
       # correct relative same site urls i.e. src="whatever.jpg"
       sed -E "s|href=\"([^/][^:\"]+)\"|href=\"$BASE_PATH/\1\"|g" |
       sed -E "s|src=\"([^/][^:\"]+)\"|src=\"$BASE_PATH/\1\"|g" |
@@ -180,16 +205,22 @@ if [[ $BASE_PATH != "" ]]; then
   verbose "Paths corrected"
 fi
 
-# Add heading if enabled e
+# Add heading
+# TODO: Fix heading arg flag logic
 if [[ $ADD_HEADING == true ]]; then
   verbose "Adding heading"
   if [[ $PRETTY_HEADINGS = true ]]; then
     echo -e "# $(basename $FILE .html | sed "s/[-_]/ /g")\n"
   else
-    echo -e "# Converted HTML to $FORMAT from: $(basename $FILE)\n"
+    if [[ "$URL" != "" ]]; then
+      # ... TODO: Add citation for source url
+    else
+      echo -e "# Converted HTML to $FORMAT from: $(basename $FILE)\n"
+    fi
   fi
 fi
 
+# Convert html to markdown
 verbose "Converting page"
 echo "$CONTENT" |
   htmlq 'div.page_content' -r '.rouge-gutter' |    # Extract and clean html
