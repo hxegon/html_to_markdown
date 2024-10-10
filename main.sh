@@ -9,7 +9,7 @@
 #     - [ ] 403
 #     - [ ] 500
 # - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
-# - [ ] Fix anchor links
+# - [x] Fix anchor links
 # - [x] Fix heading issue
 # - [x] log and don't output for pages with empty CONTENT
 # - [x] change logging to not go to STDOUT. improve verbose logging
@@ -192,13 +192,14 @@ verbose "Correcting paths"
 HTML=$(
   echo "$HTML" |
     # TODO: Combine the href/src expressions
-    # TODO: Handle anchors i.e. src="#foo" -> src="$URL#foo" (with no slash between!)
+    # correct in-page anchor links
+    sed -E "s|href=\"(#[^\"]+)\"|href=\"$URL\1\"|g" |
     # correct relative same site urls i.e. src="whatever.jpg"
-    sed -E "s|href=\"([^/][^:\"]+)\"|href=\"$URL_DIR/\1\"|g" |
-    sed -E "s|src=\"([^/][^:\"]+)\"|src=\"$URL_DIR/\1\"|g" |
+    sed -E "s|href=\"([^#/][^:\"]+)\"|href=\"$URL_DIR/\1\"|g" |
+    sed -E "s|src=\"([^#/][^:\"]+)\"|src=\"$URL_DIR/\1\"|g" |
     # correct absolute same site urls i.e. src="/whatever.jpg"
-    sed -E "s|href=\"/([^\"]+)\"|href=\"$URL_DOMAIN/\1\"|g" |
-    sed -E "s|src=\"/([^\"]+)\"|src=\"$URL_DOMAIN/\1\"|g"
+    sed -E "s|href=\"/([^\"#]+)\"|href=\"$URL_DOMAIN/\1\"|g" |
+    sed -E "s|src=\"/([^\"#]+)\"|src=\"$URL_DOMAIN/\1\"|g"
 )
 
 # Convert html content to markdown
