@@ -49,6 +49,11 @@ NOTE: This is not yet working cross platform.
 END
 )
 
+# Exit if there are no arguments
+if [[ $@ == "" ]]; then
+  fail "$HELPMESSAGE"
+fi
+
 # Initialize argument vars
 URL=""
 ADD_HEADING=true
@@ -75,14 +80,9 @@ fail() {
   exit 1
 }
 
-# Exit if there are no arguments
-if [[ $@ == "" ]]; then
-  fail "$HELPMESSAGE"
-fi
-
 ## ARGUMENT HANDLING ##
 
-TEMP=$(getopt -o hHvF:u: --longoptions url:,format:,heading,test-args,verbose,error-on-empty -n "$0" -- "$@")
+TEMP=$(getopt -o hHvF:u: --longoptions url:,format:,no-heading,test-args,verbose,error-on-empty -n "$0" -- "$@")
 
 # Exit if getopt has an error
 if [ $? != 0 ]; then
@@ -152,7 +152,6 @@ if [[ $TEST_ARGS == true ]]; then
   exit 0
 fi
 
-## VALIDATIONS ##
 verbose "Starting argument validations"
 
 # Require url parameter
@@ -165,7 +164,6 @@ fi
 # Get html
 verbose "Grabbing html for $URL"
 HTML="$(curl -sSL $URL)"
-# verbose "$(echo $CONTENT | wc -l) lines of CONTENT"
 
 if [ $? != 0 ]; then
   fail "Failed to download page"
@@ -214,11 +212,10 @@ if [[ "$(echo \"$CONTENT\" | sed '/^\s*$/d')" == "" ]]; then
     log "Converted content from page was empty (url: $URL), omitting output"
     exit 0
   fi
+else
+  echo "$HEADING"
+  echo "$CONTENT"
+
+  # TODO: remove, this is a temporary fix for a specific use case
+  echo # Add empty line at end to separate concatenated pages
 fi
-
-# output converted content
-echo "$HEADING"
-echo "$CONTENT"
-
-# TODO: remove, this is a temporary fix for a specific use case
-echo # Add empty line at end
