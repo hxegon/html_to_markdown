@@ -3,12 +3,13 @@
 # Script for converting web pages into markdown format
 
 # TODO:
+# - [ ] Pass in commands for extracting header/content html
 # - [x] Download from url
 #   - [ ] Error handling for:
 #     - [ ] 404
 #     - [ ] 403
 #     - [ ] 500
-# - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
+# - [ ] Enable consuming html from stdin
 # - [x] Option for output to file with formatted name
 #   - [x] Add substitution for domain
 #   - [ ] Ask to make directory if -o specifies one.
@@ -41,6 +42,7 @@ Optional:
   - Doesn't make directories so this will fail if google_com doesn't already exist
 -F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html+simple_tables
 -H/--no-heading - turns off adding the file name as a heading to the final markdown doc
+-s/--silent - Turns off any logging/verbose output
 -v/--verbose - Show extra info when processing
 --error-on-empty - Exit with an error if there is no page content after being converted
   Default behavior is to not output the page and log that it was empty, but exit successfully
@@ -66,12 +68,15 @@ ADD_HEADING=true
 FORMAT="markdown_strict-raw_html+simple_tables"
 TEST_ARGS=false
 VERBOSE=false
+SILENT=false
 ERROR_ON_EMPTY=false
 OUTPUT_FILE=""
 
 log() {
   # TODO: Add -s/--silent option
-  echo "main.sh: $@" >&2
+  if [[ "$SILENT" == false ]]; then
+    echo "main.sh: $@" >&2
+  fi
 }
 
 verbose() {
@@ -89,7 +94,7 @@ fail() {
 
 ## ARGUMENT HANDLING ##
 
-TEMP=$(getopt -o hHvF:u:o: --longoptions url:,format:,output-file:,no-heading,test-args,verbose,error-on-empty -n "$0" -- "$@")
+TEMP=$(getopt -o shHvF:u:o: --longoptions url:,format:,output-file:,no-heading,test-args,verbose,error-on-empty,silent -n "$0" -- "$@")
 
 # Exit if getopt has an error
 if [ $? != 0 ]; then
@@ -130,6 +135,10 @@ while true; do
     ;;
   -v | --verbose)
     VERBOSE=true
+    shift 1
+    ;;
+  -s | --silent)
+    SILENT=true
     shift 1
     ;;
   -H | --no-heading)
