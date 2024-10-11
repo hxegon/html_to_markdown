@@ -9,6 +9,9 @@
 #     - [ ] 403
 #     - [ ] 500
 # - [ ] Consume from stdin by default, add "page name" or "set heading" option or something
+# - [x] Option for output to file with formatted name
+#   - [x] Add substitution for domain
+#   - [ ] Ask to make directory if -o specifies one.
 # - [x] Fix anchor links
 # - [x] Fix heading issue
 # - [x] log and don't output for pages with empty CONTENT
@@ -33,6 +36,9 @@ Required:
 -u/--url - url to download and convert
 
 Optional:
+-o/--output-file - Output to a file. Substitutes <domain> and <slug>
+  - i.e. ./main.sh -u "https://google.com/foo/really_cool_page.html" -f "<domain>/<slug>.md" # -> google_com/really_cool_page.md
+  - Doesn't make directories so this will fail if google_com doesn't already exist
 -F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html+simple_tables
 -H/--no-heading - turns off adding the file name as a heading to the final markdown doc
 -v/--verbose - Show extra info when processing
@@ -45,7 +51,7 @@ pandoc - Actual html to markdown conversion
 getopt - arg parsing
 curl - Downloading page
 
-NOTE: This is not yet working cross platform. 
+!! This doesn't work on OS X because of various differences with the gnu vs bsd tools (sed, getopt, xargs etc.) !!
 END
 )
 
@@ -61,6 +67,7 @@ FORMAT="markdown_strict-raw_html+simple_tables"
 TEST_ARGS=false
 VERBOSE=false
 ERROR_ON_EMPTY=false
+OUTPUT_FILE=""
 
 log() {
   # TODO: Add -s/--silent option
@@ -82,7 +89,7 @@ fail() {
 
 ## ARGUMENT HANDLING ##
 
-TEMP=$(getopt -o hHvF:u: --longoptions url:,format:,no-heading,test-args,verbose,error-on-empty -n "$0" -- "$@")
+TEMP=$(getopt -o hHvF:u:o: --longoptions url:,format:,output-file:,no-heading,test-args,verbose,error-on-empty -n "$0" -- "$@")
 
 # Exit if getopt has an error
 if [ $? != 0 ]; then
@@ -104,14 +111,19 @@ while true; do
     URL=$2
     shift 2
 
-    # FIX: I'm sure there are conditions where this won't work
-    # TODO: Add logging / validations
+    # FIX: I'm sure there are conditions where this won't work.
+    # TODO: Test these
     URL_DIR=$(echo "$URL" | sed -E 's|(.+)/[^/]*$|\1|' | sed 's|/$||')  # https://foobar.com/bar/bazfoo.html -> https://foobar.com/bar
     URL_DOMAIN=$(echo "$URL" | sed -E -n 's|.*(https?://[^/]+).*|\1|p') # https://foo.bar/biz/buz.jpg -> https://foo.bar
+    URL_DOMAIN_ONLY=$(echo "$URL_DOMAIN" | sed -E 's|https?://||')
     # Used in heading and generating a file name with -o
-    URL_FILE=$(echo "$URL" | sed -E 's|.+/([^/]+)\..*$|\1|') # https://foo.bar/blog/2024/big-cool-article.html -> big-cool-article
+    URL_SLUG=$(echo "$URL" | sed -E 's|.+/([^/]+)\..*$|\1|') # https://foo.bar/blog/2024/big-cool-article.html -> big-cool-article
     ;;
   # Optional
+  -o | --output-file)
+    OUTPUT_FILE=$2
+    shift 2
+    ;;
   -F | --format)
     FORMAT=$2
     shift 2
@@ -179,7 +191,7 @@ if [[ $ADD_HEADING == true ]]; then
 
   # Backup name for the page is a slightly cleaned up version of the url's slug
   if [[ "$PAGE_NAME" == "" ]]; then
-    PAGE_NAME="$(echo $URL_FILE | sed 's/[-_]/ /g')"
+    PAGE_NAME="$(echo $URL_SLUG | sed 's/[-_]/ /g')"
   fi
 
   HEADING=$"# $PAGE_NAME [SOURCE]($URL)"$'\n'
@@ -204,7 +216,7 @@ HTML=$(
 verbose "Converting page html to markdown"
 CONTENT="$(echo "$HTML" | htmlq 'div.page_content' -r '.rouge-gutter' | pandoc --from html --to "$FORMAT" --no-highlight)"
 
-# Check for empty content
+# Exit if content is empty
 if [[ "$(echo \"$CONTENT\" | sed '/^\s*$/d')" == "" ]]; then
   if [[ "$ERROR_ON_EMPTY" == true ]]; then
     fail "Converted content from page was empty (url: $URL)"
@@ -212,10 +224,23 @@ if [[ "$(echo \"$CONTENT\" | sed '/^\s*$/d')" == "" ]]; then
     log "Converted content from page was empty (url: $URL), omitting output"
     exit 0
   fi
-else
+fi
+
+if [[ "$OUTPUT_FILE" != "" ]]; then
+  echo "$URL_DOMAIN_ONLY"
+  # TODO: Check that required URL_* vars are not empty
+  # replace any substitution tokens
+  CLEAN_DOMAIN_NAME="$(echo $URL_DOMAIN_ONLY | sed 's/\./_/g')"
+  # TODO: ask to create folder if it's in a folder
+  OUTPUT_FILE="$(echo $OUTPUT_FILE |
+    sed $'s/<slug>/'$"$URL_SLUG"$'/g' |
+    sed $'s|<domain>|'$"$CLEAN_DOMAIN_NAME"$'|g')"
+  echo "$HEADING" >>$OUTPUT_FILE
+  echo "$CONTENT" >>$OUTPUT_FILE
+else # Otherwise echo to STDOUT
   echo "$HEADING"
   echo "$CONTENT"
-
-  # TODO: remove, this is a temporary fix for a specific use case
-  echo # Add empty line at end to separate concatenated pages
 fi
+
+# TODO: remove, this is a temporary fix for a specific use case
+echo # Add empty line at end to separate concatenated pages
