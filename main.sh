@@ -41,18 +41,25 @@ Optional:
   - i.e. ./main.sh -u "https://google.com/foo/really_cool_page.html" -f "<domain>/<slug>.md" # -> google_com/really_cool_page.md
   - Doesn't make directories so this will fail if google_com doesn't already exist
 -F/--format - is the pandoc format arg. Defaults to markdown_strict-raw_html+simple_tables
--H/--no-heading - turns off adding the file name as a heading to the final markdown doc
+--title-selector - css selectors to find what should be in the topmost title of the markdown.
+  - i.e. 'head.title' or 'div.page_title_bar'
+  - Can select elements to exclude with -e/--exclude, for example -e 'div.page_title_bar>*'
+--content-selectors - CSS selectors for what should be counted as content
+  - Can select elements to exclude with -e/--exclude
+-e/--exclude - CSS selectors for anything that should be removed from header/content
+  - for example, removing the line number gutter elements from code blocks can fix the markdown output
 -s/--silent - Turns off any logging/verbose output
 -v/--verbose - Show extra info when processing
 --error-on-empty - Exit with an error if there is no page content after being converted
   Default behavior is to not output the page and log that it was empty, but exit successfully
 
 Dependencies:
-htmlq - preprocess html for better markdown conversion
+htmlq - Extracting/cleaning html for better markdown output
 pandoc - Actual html to markdown conversion
 getopt - arg parsing
 curl - Downloading page
 
+See htmlq for examples of selectors. They can be , separated for multiple selectors.
 !! This doesn't work on OS X because of various differences with the gnu vs bsd tools (sed, getopt, xargs etc.) !!
 END
 )
@@ -98,13 +105,15 @@ fi
 
 # Initialize argument vars
 URL=""
-ADD_HEADING=true
 FORMAT="markdown_strict-raw_html+simple_tables"
 TEST_ARGS=false
 ERROR_ON_EMPTY=false
 OUTPUT_FILE=""
+TITLE_SELECTOR=""
+CONTENT_SELECTOR=""
+EXCLUDE_SELECTOR=""
 
-TEMP=$(getopt -o shHvF:u:o: --longoptions url:,format:,output-file:,no-heading,test-args,verbose,error-on-empty,silent -n "$0" -- "$@")
+TEMP=$(getopt -o shvF:u:o:e: --longoptions url:,format:,exclude:,title-selector:,content-selector:,output-file:,test-args,verbose,error-on-empty,silent -n "$0" -- "$@")
 
 # Exit if getopt has an error
 if [ $? != 0 ]; then
@@ -134,7 +143,19 @@ while true; do
     # Used in heading and generating a file name with -o
     URL_SLUG=$(echo "$URL" | sed -E 's|.+/([^/]+)\..*$|\1|') # https://foo.bar/blog/2024/big-cool-article.html -> big-cool-article
     ;;
+  --content-selector)
+    CONTENT_SELECTOR=$2
+    shift 2
+    ;;
   # Optional
+  --title-selector)
+    TITLE_SELECTOR=$2
+    shift 2
+    ;;
+  -e | --exclude-selector)
+    EXCLUDE_SELECTOR=$2
+    shift 2
+    ;;
   -o | --output-file)
     OUTPUT_FILE=$2
     shift 2
@@ -150,10 +171,6 @@ while true; do
   -s | --silent)
     SILENT=true
     shift 1
-    ;;
-  -H | --no-heading)
-    ADD_HEADING=false
-    shift 1 # Shift 1 only because it's just a on/off toggle with no value
     ;;
   --error-on-empty)
     ERROR_ON_EMPTY=true
@@ -173,6 +190,7 @@ while true; do
   esac
 done
 
+# TODO: Update this with the rest of the arguments
 if [[ $TEST_ARGS == true ]]; then
   echo "Parsed argument string: $TEMP"
   echo "FORMAT: $FORMAT"
@@ -196,6 +214,11 @@ if [[ "$OUTPUT_FILE" != "" && "$URL" == "" ]]; then
   fi
 fi
 
+# Must specify a content selector
+if [[ "$CONTENT_SELECTOR" == "" ]]; then
+  fail "Must specify a content selector"
+fi
+
 ## PROGRAM ##
 
 # Get html
@@ -216,8 +239,9 @@ fi
 # Make a heading
 HEADING=""
 
-if [[ $ADD_HEADING == true ]]; then
-  PAGE_NAME="$(echo "$HTML" | htmlq 'div.page_title_bar' -r 'div.page_title_bar>*' | pandoc --from html --to $FORMAT --no-highlight)"
+# TODO: Make heading only trigger when heading selector is specified
+if [[ $TITLE_SELECTOR != "" ]]; then
+  PAGE_NAME="$(echo "$HTML" | htmlq "$TITLE_SELECTOR" -r "$EXCLUDE_SELECTOR" | pandoc --from html --to "$FORMAT" --no-highlight --wrap=preserve)"
 
   # Backup name for the page is a slightly cleaned up version of the url's slug
   if [[ "$PAGE_NAME" == "" && "$URL" != "" ]]; then
@@ -227,10 +251,11 @@ if [[ $ADD_HEADING == true ]]; then
   HEADING=$"# $PAGE_NAME"
 
   if [[ "$URL" != "" ]]; then
-    HEADING+=" [SOURCE]($URL)"
+    HEADING+=$'\n' # Add blank line under heading
+    HEADING+="## [link to page source]($URL)"
   fi
 
-  HEADING+=$'\n' # Add blank line under heading
+  HEADING+=$'\n\n' # Add blank line under heading
 fi
 
 if [[ "$URL" != "" ]]; then
@@ -251,7 +276,7 @@ fi
 
 # Convert html content to markdown
 verbose "Converting page html to markdown"
-CONTENT="$(echo "$HTML" | htmlq 'div.page_content' -r '.rouge-gutter' | pandoc --from html --to "$FORMAT" --no-highlight)"
+CONTENT="$(echo "$HTML" | htmlq "$CONTENT_SELECTOR" -r "$EXCLUDE_SELECTOR" | pandoc --from html --to "$FORMAT" --no-highlight --wrap=preserve)"
 
 # Exit if content is empty
 if [[ "$(echo $CONTENT | sed '/^\s*$/d')" == "" ]]; then
@@ -276,10 +301,9 @@ if [[ "$OUTPUT_FILE" != "" ]]; then
 
   echo "$HEADING" >>$OUTPUT_FILE
   echo "$CONTENT" >>$OUTPUT_FILE
+  echo
 else # Otherwise echo to STDOUT
   echo "$HEADING"
   echo "$CONTENT"
+  echo
 fi
-
-# TODO: remove, this is a temporary fix for a specific use case
-echo # Add empty line at end to separate concatenated pages
